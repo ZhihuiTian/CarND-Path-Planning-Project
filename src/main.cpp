@@ -109,50 +109,115 @@ int main() {
               // en: The previous path vector's size.
               // zh: 之前的路径点集合的大小
               int prev_size = previous_path_x.size();
+              // en: Sensor fusion is below.
               // zh: 下面是传感器融合的内容
               if (prev_size > 0)
               {
                 car_s = end_path_s;
               }
+
+              // en: Too close to the car in front of us
               // zh: 是否与前车过于接近
               bool too_close = false;
+              // en: There is a car on left of us
+              // zh: 左边有车
+              bool car_in_left_lane = false;
+              // en: There is a car on right of us
+              // zh: 右边有车
+              bool car_in_right_lane = false;
 
               // Find ref_v to use
               for (int i = 0; i < sensor_fusion.size(); i++)
               {
-                // en: Car is in my lane
-                // zh: D可以判断出前车在哪条车道，如果有车在同一条车道上的时候
+
                 float d = sensor_fusion[i][6];
-                // 备注: 车道的宽度为4米
-                if (d < (2 + 4 * lane + 2) && d > (2 + 4 * lane - 2))
+                // en: Detect the car around us is at which lane
+                // zh: 判断周围的车在哪条车道
+                int other_car_lane;
+                if (d >= 0 && d < 4)
                 {
-                  // Check width of lane, in case cars are merging into our lane
-                  double vx = sensor_fusion[i][3];
-                  double vy = sensor_fusion[i][4];
-                  double check_speed = sqrt(vx * vx + vy * vy);
-                  double check_car_s = sensor_fusion[i][5];
-                  // If using previous points can project an s value outwards in time
-                  check_car_s += ((double)prev_size * .02 * check_speed);
-                  // Check s values greater than ours and s gap
-                  if ((check_car_s > car_s) && (check_car_s - car_s) < 30)
+                  other_car_lane = 0;
+                }
+                else if (d >= 4 && d < 8)
+                {
+                  other_car_lane = 1;
+                }
+                else if (d >= 8 && d <= 12)
+                {
+                  other_car_lane = 2;
+                }
+                else
+                {
+                  continue;
+                }
+
+                // 备注: 车道的宽度为4米
+                // Check width of lane, in case cars are merging into our lane
+                double vx = sensor_fusion[i][3];
+                double vy = sensor_fusion[i][4];
+                double check_speed = sqrt(vx * vx + vy * vy);
+                double check_car_s = sensor_fusion[i][5];
+
+                // If using previous points can project an s value outwards in time
+                check_car_s += ((double)prev_size * .02 * check_speed);
+
+                // Check s values greater than ours and s gap
+                double s_gap = 30;
+                // en: Car in front of us.
+                // zh: 车辆在我们正前方
+                if (other_car_lane == lane)
+                {
+                  if (((car_s - s_gap) < check_car_s) && ((car_s + s_gap) > check_car_s))
                   {
-                    // Do some logic here, lower reference velocity so we dont crash into the car in front of us, could also flag to try to change lanes.
-                    // ref_vel = 29.5; //mph
                     too_close = true;
+                  }
+                }
+                // en: Car is on left of us.
+                // zh: 车辆在我们左方车道
+                else if (lane - other_car_lane == 1)
+                {
+                  if (((car_s - s_gap) < check_car_s) && ((car_s + s_gap) > check_car_s))
+                  {
+                    car_in_left_lane = true;
+                  }
+                }
+                else if (other_car_lane - lane == 1)
+                {
+                  if (((car_s - s_gap) < check_car_s) && ((car_s + s_gap) > check_car_s))
+                  {
+                    car_in_right_lane = true;
                   }
                 }
               }
 
               if (too_close)
               {
-                ref_vel -= .224;
+                // en: Left lane is high priority
+                // zh: 优先走超车道超车
+                if (!car_in_left_lane && lane > 0)
+                {
+                  lane--;
+                }
+                // en: Right lane is mid priority
+                // zh: 试着从慢车道超车
+                else if (!car_in_right_lane && lane < 2)
+                {
+                  lane++;
+                }
+                // en: If we can not overtake, then slow down the speed
+                // zh: 实在不行就减速
+                else
+                {
+                  ref_vel -= .224;
+                }
               }
+              // en: In order to avoid exceeding the speed limit (50 mph), it is better to use 49.5.
               // zh: 给定最大的车速。为了避免超过限速（50mph），所以使用49.5比较好。
               else if (ref_vel < 49.5)
               {
                 ref_vel += .224;
               }
-
+              // en: Here is the code for the path planning, how to make the car stable and not overspeed
               // zh: 以下是路径规划的代码，如何让汽车行驶的稳定并且不超速
               vector<double> ptsx;
               vector<double> ptsy;
